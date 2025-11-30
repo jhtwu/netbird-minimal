@@ -1,0 +1,606 @@
+# NetBird Minimal C Client - 實作計劃
+
+## 專案概述
+
+本專案目標是將 NetBird client 從 Go 語言移植到 C 語言，專注於 Linux 平台的最小化實作。
+
+### 核心目標
+- **平台**: 僅支援 Linux（包含 OpenWrt）
+- **WireGuard**: 使用 Kernel WireGuard + 現有工具/library
+- **網路**: 單一 Management server + 單一 Signal server
+- **功能**: setup-key → join network → 建立 tunnel → 互 ping
+- **連線**: 支援 P2P / Relay (ICE 使用現成 libnice)
+
+### 不支援功能
+- 其他平台 (Windows, macOS, Android, iOS)
+- 多網路支援
+- SSH, DNS, Firewall 等進階功能
+- UI 介面
+
+---
+
+## 專案結構
+
+```
+netbird-minimal/
+├── README.md                           # 專案總覽
+├── plan.txt                            # 本檔案
+├── .gitignore
+│
+├── doc/                                # 文件目錄
+│   ├── GO_CODE_OVERVIEW.md            # Go 程式碼說明
+│   ├── GO_TO_C_MAPPING.md             # Go 到 C 對應詳解
+│   ├── GO_PORTING_SUMMARY.md          # Go 移植階段總結
+│   └── IMPLEMENTATION_CHECKLIST.md    # C 實作檢查清單
+│
+├── go/                                 # Go 參考程式碼
+│   ├── go.mod
+│   ├── cmd/                           # CLI 命令實作
+│   ├── internal/                      # 核心引擎
+│   ├── iface/                         # WireGuard 介面
+│   ├── management/client/             # Management 客戶端
+│   ├── signal/client/                 # Signal 客戶端
+│   └── proto/                         # Protocol Buffers 定義
+│       ├── management.proto
+│       └── signalexchange.proto
+│
+└── c/                                  # C 語言實作 (待開發)
+    ├── Makefile
+    ├── include/                       # 標頭檔
+    │   ├── engine.h
+    │   ├── wg_iface.h
+    │   ├── mgmt_client.h
+    │   ├── signal_client.h
+    │   ├── route.h
+    │   └── config.h
+    ├── src/                           # 原始檔
+    │   ├── main.c
+    │   ├── engine.c
+    │   ├── wg_iface.c
+    │   ├── mgmt_client.c
+    │   ├── signal_client.c
+    │   ├── route.c
+    │   └── config.c
+    ├── proto/                         # Proto 生成的 C 程式碼
+    └── test/                          # 測試程式
+```
+
+---
+
+## 當前進度
+
+### ✅ Phase 0: Go 程式碼準備 (已完成)
+
+已從 NetBird 官方專案複製並整理：
+- 71 個 Go 原始檔（696KB）
+- 核心模組: Engine, WireGuard Interface, Management/Signal clients
+- Proto 定義檔案
+- 詳細文件和 C 對應說明
+
+參見: `doc/GO_PORTING_SUMMARY.md`
+
+### ⏭️ Phase 1: WireGuard + Route 模組 (進行中)
+
+**目標**: 實作 WireGuard 介面管理和路由設定
+
+**實作重點**:
+
+#### 1. WireGuard Interface (c/wg_iface.c)
+
+對照 Go 檔案: `go/iface/iface_new_linux.go`, `go/iface/device/wg_link_linux.go`
+
+```c
+// c/include/wg_iface.h
+typedef struct wg_iface wg_iface_t;
+
+int wg_iface_create(const nb_config_t *cfg, wg_iface_t **out);
+int wg_iface_up(wg_iface_t *iface);
+int wg_iface_update_peer(
+    wg_iface_t *iface,
+    const char *peer_pubkey,
+    const char *allowed_ips,     // "100.64.0.6/32,10.0.0.0/24"
+    int persistent_keepalive,    // seconds
+    const char *endpoint,         // "203.0.113.5:51820" or NULL
+    const char *preshared_key     // or NULL
+);
+int wg_iface_remove_peer(wg_iface_t *iface, const char *peer_pubkey);
+int wg_iface_destroy(wg_iface_t *iface);
+```
+
+**實作方式** (選擇其一):
+
+選項 A - 快速原型 (建議先做):
+```c
+// 使用 shell 命令
+system("ip link add dev wt0 type wireguard");
+system("ip address add 100.64.0.5/16 dev wt0");
+system("wg set wt0 private-key /tmp/key listen-port 51820");
+system("ip link set wt0 up");
+```
+
+選項 B - 正式版本:
+```c
+// 使用 libmnl (netlink library)
+// 直接操作 kernel，無需 fork 外部命令
+```
+
+**測試目標**:
+- 能建立 WireGuard 介面
+- 能手動連接到現有 WireGuard server
+- 能互 ping
+
+---
+
+#### 2. Route Manager (c/route.c)
+
+對照 Go 檔案: `go/internal/routemanager/systemops/systemops_linux.go`
+
+```c
+// c/include/route.h
+typedef struct route_manager route_manager_t;
+
+typedef struct {
+    char *network;      // "10.0.0.0/8" (CIDR)
+    char *device;       // "wt0"
+    int metric;         // 優先度
+    int masquerade;     // NAT
+} route_config_t;
+
+route_manager_t* route_manager_new(const char *wg_device);
+int route_add(route_manager_t *mgr, const route_config_t *route);
+int route_remove(route_manager_t *mgr, const char *network);
+void route_manager_free(route_manager_t *mgr);
+```
+
+**實作方式**:
+
+選項 A - 快速原型:
+```c
+system("ip route add 10.0.0.0/8 dev wt0 metric 100");
+```
+
+選項 B - 正式版本:
+```c
+// 使用 libmnl netlink API
+```
+
+---
+
+### Phase 2: Management Client
+
+**目標**: 實作與 Management Server 的 gRPC 通訊
+
+對照 Go 檔案: `go/management/client/grpc.go`
+
+#### 1. 編譯 Proto
+
+```bash
+cd c/
+protoc --c_out=proto/ ../go/proto/management.proto
+# 生成: management.pb-c.h, management.pb-c.c
+```
+
+#### 2. Management Client (c/mgmt_client.c)
+
+```c
+// c/include/mgmt_client.h
+typedef struct mgmt_client mgmt_client_t;
+
+typedef struct {
+    char *peer_id;
+    char *public_key;
+    char **allowed_ips;
+    int allowed_ips_count;
+    char *endpoint;
+    int persistent_keepalive;
+} peer_info_t;
+
+typedef struct {
+    char *network;      // "10.0.0.0/8"
+    char *peer;
+    int metric;
+    int masquerade;
+} route_t;
+
+mgmt_client_t* mgmt_client_new(const char *url);
+
+int mgmt_register(
+    mgmt_client_t *c,
+    const char *setup_key,
+    const char *wg_pubkey,
+    // Output parameters:
+    char **peer_id_out,
+    char **wg_addr_out,
+    peer_info_t **peers_out,
+    int *peers_count_out,
+    route_t **routes_out,
+    int *routes_count_out
+);
+
+int mgmt_sync(
+    mgmt_client_t *c,
+    const char *peer_id,
+    peer_info_t **peers_out,
+    int *peers_count_out,
+    route_t **routes_out,
+    int *routes_count_out
+);
+
+void mgmt_client_free(mgmt_client_t *c);
+```
+
+**依賴 library**:
+- protobuf-c: https://github.com/protobuf-c/protobuf-c
+- grpc-c: https://github.com/lixiangyun/grpc-c (或其他 C binding)
+
+#### 3. Config 管理 (c/config.c)
+
+對照 Go 檔案: `go/internal/config.go` (需從官方專案補充)
+
+```c
+// c/include/config.h
+typedef struct {
+    char *private_key;          // WG private key
+    char *management_url;
+    char *signal_url;
+    char *admin_url;
+
+    char *wg_iface_name;       // "wt0"
+    char *wg_address;          // "100.64.0.5/16"
+    int wg_listen_port;        // 51820
+    char *preshared_key;
+
+    char **nat_external_ips;
+    int nat_external_ips_count;
+} nb_config_t;
+
+int config_load(const char *path, nb_config_t **cfg_out);
+int config_save(const char *path, const nb_config_t *cfg);
+void config_free(nb_config_t *cfg);
+```
+
+**格式**: JSON (與 Go client 相容)
+**Library**: cJSON (https://github.com/DaveGamble/cJSON)
+
+**測試目標**:
+- 能連接到 Management Server
+- 能用 setup-key 註冊
+- 在 Management UI 看到新的 peer
+- 能收到 peer 列表和路由
+
+---
+
+### Phase 3: Engine 整合
+
+**目標**: 串接 WireGuard + Management，實現完整啟動流程
+
+對照 Go 檔案: `go/internal/engine.go`
+
+```c
+// c/include/engine.h
+typedef struct nb_engine nb_engine_t;
+
+nb_engine_t* nb_engine_new(const nb_config_t *cfg);
+int nb_engine_start(nb_engine_t *eng);
+void nb_engine_stop(nb_engine_t *eng);
+void nb_engine_free(nb_engine_t *eng);
+```
+
+**啟動流程**:
+
+```
+nb_engine_start()
+  ├─> 1. 載入/建立 config
+  ├─> 2. 初始化 mgmt_client
+  ├─> 3. mgmt_register(setup_key)
+  │    └─> 收到: peer_id, wg_addr, peers, routes
+  ├─> 4. wg_iface_create()
+  │    └─> 建立 WireGuard 介面
+  ├─> 5. wg_iface_up()
+  ├─> 6. 為每個 peer:
+  │    └─> wg_iface_update_peer()
+  ├─> 7. 為每個 route:
+  │    └─> route_add()
+  └─> 8. 啟動同步 loop (定期 mgmt_sync)
+```
+
+**停止流程**:
+
+```
+nb_engine_stop()
+  ├─> 1. 停止同步 loop
+  ├─> 2. route_remove() (所有路由)
+  ├─> 3. wg_iface_remove_peer() (所有 peers)
+  ├─> 4. wg_iface_destroy()
+  └─> 5. mgmt_client_free()
+```
+
+**測試目標**:
+- 兩台機器能透過 relay server 互 ping
+- 能正確啟動和停止
+- Config 正確儲存和載入
+
+---
+
+### Phase 4: Signal Client + ICE
+
+**目標**: 實作 P2P 連線
+
+對照 Go 檔案: `go/signal/client/grpc.go`
+
+#### 1. 編譯 Proto
+
+```bash
+protoc --c_out=proto/ ../go/proto/signalexchange.proto
+```
+
+#### 2. Signal Client (c/signal_client.c)
+
+```c
+// c/include/signal_client.h
+typedef struct signal_client signal_client_t;
+
+typedef struct {
+    char *from;         // Sender peer ID
+    char *to;           // Recipient peer ID
+    char *type;         // "offer" / "answer" / "candidate"
+    char *sdp;          // For offer/answer
+    char *candidate;    // For ICE candidate
+} signal_message_t;
+
+signal_client_t* signal_client_new(const char *url);
+int signal_subscribe(signal_client_t *c, const char *peer_id);
+int signal_send(signal_client_t *c, const char *to_peer,
+                const char *msg_type, const char *content);
+int signal_receive(signal_client_t *c, signal_message_t *msg_out);
+void signal_client_free(signal_client_t *c);
+```
+
+#### 3. ICE 整合 (libnice)
+
+對照 Go: NetBird 使用 Pion ICE，C 版使用 libnice
+
+```c
+// 偽代碼流程
+ice_agent = nice_agent_new();
+nice_agent_add_stream(agent, 1);
+
+// 收到 Signal offer
+on_signal_offer(offer_sdp) {
+    nice_agent_parse_remote_sdp(agent, offer_sdp);
+    nice_agent_gather_candidates(agent);
+    local_sdp = nice_agent_generate_local_sdp(agent);
+    signal_send(peer_id, "answer", local_sdp);
+}
+
+// ICE 連線建立
+on_ice_connected(ip, port) {
+    wg_iface_update_peer(peer_pubkey, ..., endpoint=ip:port);
+}
+```
+
+**Library**: libnice (https://nice.freedesktop.org/)
+
+**測試目標**:
+- 兩台機器在 LAN 內 P2P 直連
+- 跨 NAT 環境 P2P 連線
+- 回退到 relay 模式
+
+---
+
+### Phase 5: CLI
+
+**目標**: 實作完整命令列介面
+
+對照 Go 檔案: `go/cmd/up.go`, `go/cmd/down.go`, `go/cmd/status.go`
+
+```c
+// c/src/main.c
+int main(int argc, char *argv[]) {
+    if (strcmp(argv[1], "up") == 0) {
+        return cmd_up(argc, argv);
+    } else if (strcmp(argv[1], "down") == 0) {
+        return cmd_down();
+    } else if (strcmp(argv[1], "status") == 0) {
+        return cmd_status();
+    }
+    // ...
+}
+
+int cmd_up(int argc, char *argv[]) {
+    // 解析 --setup-key, --management-url 等
+    nb_config_t *cfg = parse_args_and_load_config(argc, argv);
+
+    nb_engine_t *engine = nb_engine_new(cfg);
+    nb_engine_start(engine);
+
+    // Daemon 模式
+    if (daemonize) {
+        fork_to_background();
+        write_pidfile();
+    }
+
+    // 等待 signal
+    wait_for_termination_signal();
+
+    nb_engine_stop(engine);
+    nb_engine_free(engine);
+}
+
+int cmd_down(void) {
+    // 讀取 PID
+    // 發送 SIGTERM 給 daemon
+    // 等待停止完成
+}
+
+int cmd_status(void) {
+    // 查詢執行中的 daemon (Unix socket or shared memory)
+    // 顯示狀態
+    printf("Daemon status: Connected\n");
+    printf("Management: Connected\n");
+    printf("Signal: Connected\n");
+    printf("NetBird IP: 100.64.0.5/16\n");
+    printf("Peers: 3/5 Connected\n");
+}
+```
+
+**功能需求**:
+- 命令列參數解析
+- Daemon 模式 (fork, pidfile)
+- Signal handler (SIGTERM, SIGINT)
+- IPC 機制 (daemon 和 CLI 通訊)
+
+**測試目標**:
+```bash
+$ sudo nbc up --setup-key A1B2C3... --management-url https://api.example.com
+NetBird started successfully
+
+$ nbc status
+Daemon status: Connected
+Management: Connected
+Signal: Connected
+NetBird IP: 100.64.0.5/16
+Peers: 3/5 Connected
+
+$ nbc down
+NetBird stopped
+```
+
+---
+
+## 實作建議
+
+### 開發順序
+
+1. **Phase 1**: WireGuard + Route (先用 shell 命令快速實作)
+   - 預估: 3-5 天
+   - 驗收: 能建立 WG 隧道
+
+2. **Phase 2**: Management Client
+   - 預估: 5-7 天
+   - 驗收: 能註冊 peer
+
+3. **Phase 3**: Engine 整合
+   - 預估: 3-5 天
+   - 驗收: 兩台機器能互 ping (relay 模式)
+
+4. **Phase 4**: Signal + ICE
+   - 預估: 5-7 天
+   - 驗收: P2P 直連
+
+5. **Phase 5**: CLI
+   - 預估: 2-3 天
+   - 驗收: 完整 CLI 體驗
+
+**總計**: 3-4 週可完成 MVP (Minimal Viable Product)
+
+### 快速原型 vs 正式版本
+
+**快速原型** (建議先做):
+- ✅ 使用 shell 命令 (wg, ip route)
+- ✅ 單執行緒
+- ✅ 簡單錯誤處理
+- ✅ Relay 模式為主
+- 🎯 目標: 2 週內跑起來
+
+**正式版本** (之後優化):
+- ⭐ 使用 libmnl (netlink)
+- ⭐ 多執行緒 (pthread)
+- ⭐ 完善錯誤處理和重連
+- ⭐ 完整 P2P (libnice)
+- 🎯 目標: 1 個月內完成
+
+---
+
+## 依賴項目
+
+### 系統需求
+- Linux Kernel 5.6+ (內建 WireGuard)
+- 或 WireGuard kernel module
+
+### 必要工具
+```bash
+apt-get install wireguard-tools iproute2
+```
+
+### 必要 Library
+```bash
+# Protocol Buffers
+apt-get install protobuf-c-compiler libprotobuf-c-dev
+
+# gRPC (可能需手動編譯)
+# 參考: https://github.com/lixiangyun/grpc-c
+
+# ICE
+apt-get install libnice-dev
+
+# JSON
+apt-get install libcjson-dev
+
+# Netlink (optional, 正式版才需要)
+apt-get install libmnl-dev
+```
+
+### 權限
+```bash
+# 方式 1: root
+sudo ./nbc up
+
+# 方式 2: capability
+sudo setcap cap_net_admin+ep ./nbc
+./nbc up
+```
+
+---
+
+## 測試環境
+
+### 最小測試
+- 2 台 Linux 機器（VM 或實體機）
+- 可訪問的 NetBird Management Server
+- 可訪問的 NetBird Signal Server
+
+### 進階測試
+- NAT 環境測試
+- OpenWrt 路由器測試
+- 跨網段測試
+
+---
+
+## 參考資源
+
+### 專案文件
+- `README.md` - 專案總覽
+- `doc/GO_CODE_OVERVIEW.md` - Go 程式碼說明
+- `doc/GO_TO_C_MAPPING.md` - Go 到 C 詳細對應
+- `doc/IMPLEMENTATION_CHECKLIST.md` - 實作檢查清單
+
+### 外部資源
+- NetBird 官方: https://github.com/netbirdio/netbird
+- WireGuard: https://www.wireguard.com/
+- libmnl (netlink): https://www.netfilter.org/projects/libmnl/
+- protobuf-c: https://github.com/protobuf-c/protobuf-c
+- grpc-c: https://github.com/lixiangyun/grpc-c
+- libnice (ICE): https://nice.freedesktop.org/
+- cJSON: https://github.com/DaveGamble/cJSON
+
+---
+
+## License
+
+本專案基於 NetBird 官方專案，遵循 BSD-3-Clause License。
+
+---
+
+## 版本歷史
+
+- **v0.1** (2025-11-30): Go 程式碼準備完成，開始 C 實作
+- **v0.2** (TBD): Phase 1-3 完成 (Relay 模式可用)
+- **v0.3** (TBD): Phase 4 完成 (P2P 可用)
+- **v1.0** (TBD): Phase 5 完成 (完整 CLI)
+
+---
+
+**最後更新**: 2025-11-30
+**當前狀態**: Go 程式碼準備完成，進入 C 實作階段
+**下一步**: Phase 1 - WireGuard Interface + Route Manager

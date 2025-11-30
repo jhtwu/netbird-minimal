@@ -1,0 +1,52 @@
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+
+# Executables
+nbc
+netbird-minimal
+
+# Go build
+go/vendor/
+go/*.sum
+
+# C build
+c/build/
+c/bin/
+c/obj/
+c/*.o
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+/tmp/
+*.tmp
+
+# Config (may contain secrets)
+*.json
+!example-config.json
+
+# Proto generated files
+*.pb.h
+*.pb.c
+*.pb-c.h
+*.pb-c.c
+
+# Testing
+test_output/
+coverage/
