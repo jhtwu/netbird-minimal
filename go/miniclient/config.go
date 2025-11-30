@@ -17,6 +17,7 @@ type Config struct {
 	WgIfaceName   string   `json:"wg_iface_name"`
 	WgAddress     string   `json:"wg_address"`
 	WgListenPort  int      `json:"wg_listen_port"`
+	WgPrivateKey  string   `json:"wg_private_key"`
 	Peers         []Peer   `json:"peers"`
 	Routes        []string `json:"routes"`
 }
@@ -74,8 +75,8 @@ func defaultConfig() *Config {
 		WgIfaceName:   "wtnb0",
 		WgAddress:     "100.64.0.50/32",
 		WgListenPort:  51820,
+		WgPrivateKey:  "",
 		Peers:         []Peer{},
 		Routes:        []string{},
 	}
 }
-

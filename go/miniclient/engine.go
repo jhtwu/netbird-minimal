@@ -15,6 +15,7 @@ type Engine struct {
 	started    bool
 	lastSync   time.Time
 	peerConfig []Peer
+	wg         *WGApplier
 }
 
 func NewEngine(cfg *Config, mgmt *ManagementClient, sig *SignalClient) *Engine {
@@ -22,6 +23,7 @@ func NewEngine(cfg *Config, mgmt *ManagementClient, sig *SignalClient) *Engine {
 		cfg:    cfg,
 		mgmt:   mgmt,
 		signal: sig,
+		wg:     NewWGApplier(),
 	}
 }
 
@@ -41,6 +43,11 @@ func (e *Engine) Start() error {
 	e.cfg.Routes = routes
 	e.lastSync = time.Now()
 	e.started = true
+
+	if err := e.wg.Apply(e.cfg, peers, routes); err != nil {
+		return fmt.Errorf("apply wireguard config: %w", err)
+	}
+
 	fmt.Printf("[engine] started\n")
 	fmt.Printf("[engine] iface=%s addr=%s port=%d\n", e.cfg.WgIfaceName, e.cfg.WgAddress, e.cfg.WgListenPort)
 	fmt.Printf("[engine] peers=%d routes=%d\n", len(peers), len(routes))
@@ -51,6 +58,7 @@ func (e *Engine) Stop() {
 	if !e.started {
 		return
 	}
+	_ = e.wg.Teardown(e.cfg)
 	e.started = false
 	fmt.Printf("[engine] stopped\n")
 }
@@ -69,4 +77,3 @@ func (e *Engine) Status() {
 		fmt.Printf("last sync: %s\n", e.lastSync.Format(time.RFC3339))
 	}
 }
-

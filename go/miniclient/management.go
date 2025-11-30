@@ -17,7 +17,7 @@ func NewManagementClient(url string) *ManagementClient {
 
 func (c *ManagementClient) Register(setupKey string) ([]Peer, []string, error) {
 	if setupKey == "" {
-		return nil, nil, fmt.Errorf("setup key is required for registration")
+		fmt.Println("[mgmt] setup key missing; returning demo peer only")
 	}
 	peer := Peer{
 		ID:         "peer-" + fmt.Sprint(time.Now().Unix()),
@@ -28,4 +28,3 @@ func (c *ManagementClient) Register(setupKey string) ([]Peer, []string, error) {
 	route := "10.0.0.0/24"
 	return []Peer{peer}, []string{route}, nil
 }
-
