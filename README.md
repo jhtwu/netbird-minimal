@@ -5,7 +5,13 @@ NetBird 是一個開源的 WireGuard VPN 平台。本專案目標是將 NetBird 
 ## 專案狀態
 
 - ✅ **Phase 1**: Go 程式碼準備完成
-- ⏭️ **Phase 2**: C 語言實作進行中
+- ✅ **Phase 2-3（原型）**: C 端已具備 WireGuard/Route/JSON/CLI，僅支援手動 peers/路由
+- ⏭️ **Phase 4-5**: Management/Signal gRPC、setup-key 自動註冊、ICE/P2P、Daemon 模式
+
+> **現況提示**
+> - Management/Signal/ICE 尚未實作，暫無自動註冊或同步；需手動新增 peers/路由。
+> - CLI 名稱：`netbird-client`，預設介面為 `wtnb0`（避免覆蓋系統已有的 `wt0`）。
+> - 設定格式支援 NetBird CamelCase 與 snake_case，建議使用 CamelCase。
 
 ## 目錄結構
 
@@ -26,8 +32,11 @@ netbird/
 │   ├── signal/                # Signal 客戶端
 │   └── proto/                 # Protocol Buffers 定義
 │
-└── c/                          # C 語言實作（待開發）
-    └── (empty)
+└── c/                          # C 語言實作（Phase 1~3 原型）
+    ├── include/               # 標頭 (config/engine/wg_iface/route)
+    ├── src/                   # 實作 (WireGuard、Route、Config、Engine、CLI)
+    ├── test/                  # 測試 (wg/route/config/engine/CLI workflow)
+    └── build/                 # 編譯輸出
 ```
 
 ## 專案目標
@@ -91,47 +100,13 @@ go build -o netbird
 sudo ./netbird up --setup-key YOUR_KEY
 ```
 
-### 3. 開始 C 實作
-根據 `plan.txt` 的建議順序：
+### 3. C 端現況（Phase 1~3 原型）
+- 已有：WireGuard/Route（shell 命令原型）、JSON 設定、Engine、CLI (`netbird-client`)。
+- 未有：Management/Signal gRPC、setup-key/自動註冊、ICE/P2P、Daemon/IPC。
+- 介面預設：`wtnb0`；測試用 `wtnb-cli0`，避免覆蓋系統既有介面。
+- 使用方式：參考 `c/README.md`（包含建置與測試），目前僅支援手動新增 peers/路由。
 
-#### Step 1: WireGuard + Route 模組
-```bash
-cd c/
-# 實作 wg_iface.c 和 route.c
-# 測試：手動建立 WG 介面，連接現有 WireGuard server
-```
-
-#### Step 2: Management Client
-```bash
-# 編譯 proto
-protoc --c_out=. ../go/proto/management.proto
-
-# 實作 mgmt_client.c
-# 測試：用 setup-key 註冊，在 Management UI 看到 peer
-```
-
-#### Step 3: Engine 整合
-```bash
-# 實作 engine.c
-# 整合 Step 1 + Step 2
-# 測試：兩台機器透過 relay 互 ping
-```
-
-#### Step 4: Signal Client + ICE
-```bash
-# 編譯 proto
-protoc --c_out=. ../go/proto/signalexchange.proto
-
-# 實作 signal_client.c
-# 整合 libnice
-# 測試：P2P 直連
-```
-
-#### Step 5: CLI
-```bash
-# 實作 nbc_cli.c (main)
-# 測試：完整 CLI 工作流程
-```
+後續開發順序可參考 `plan.txt`：Phase 4（Signal/ICE）、Phase 5（完整 CLI/Daemon）。
 
 ## 技術棧
 

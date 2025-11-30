@@ -25,7 +25,7 @@ typedef struct wg_iface wg_iface_t;
  * Reference: Go WGIface interface
  */
 struct wg_iface {
-    char *name;              /* Interface name, e.g., "wt0" */
+    char *name;              /* Interface name, e.g., "wtnb0" */
     char *address;           /* IP address with CIDR, e.g., "100.64.0.5/16" */
     char *private_key;       /* WireGuard private key */
     int listen_port;         /* UDP listen port */

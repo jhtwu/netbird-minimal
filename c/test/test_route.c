@@ -37,8 +37,14 @@ int main(void) {
 
     wg_generate_private_key(&privkey);
     config_new_default(&cfg);
+    free(cfg->wg_iface_name);
+    char ifname[32];
+    snprintf(ifname, sizeof(ifname), "wtnb-rt-%d", getpid() % 10000);
+    cfg->wg_iface_name = strdup(ifname);
     cfg->wg_private_key = privkey;
-    cfg->wg_address = strdup("100.64.0.100/16");
+    cfg->wg_address = strdup("203.0.113.251/32");
+    /* Use high port range to avoid clashes */
+    cfg->wg_listen_port = 53002 + (getpid() % 500);
 
     ret = wg_iface_create(cfg, &iface);
     if (ret != NB_SUCCESS) {

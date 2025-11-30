@@ -123,6 +123,12 @@ int cmd_down(const char *config_path) {
 
     NB_LOG_INFO("Stopping NetBird client...");
 
+    /* Ensure config exists to avoid deleting unintended interfaces */
+    if (access(config_path, F_OK) != 0) {
+        NB_LOG_ERROR("Config file not found: %s", config_path);
+        return NB_ERROR_NOTFOUND;
+    }
+
     /* Load config to get interface name */
     ret = config_load(config_path, &cfg);
     if (ret != NB_SUCCESS) {
@@ -150,6 +156,11 @@ int cmd_down(const char *config_path) {
 int cmd_status(const char *config_path) {
     nb_config_t *cfg = NULL;
     int ret;
+
+    if (access(config_path, F_OK) != 0) {
+        NB_LOG_ERROR("Config file not found: %s", config_path);
+        return NB_ERROR_NOTFOUND;
+    }
 
     ret = config_load(config_path, &cfg);
     if (ret != NB_SUCCESS) {
@@ -209,6 +220,11 @@ int cmd_add_peer(const char *config_path, const char *pubkey,
     int ret;
 
     NB_LOG_INFO("Adding peer: %s", pubkey);
+
+    if (access(config_path, F_OK) != 0) {
+        NB_LOG_ERROR("Config file not found: %s", config_path);
+        return NB_ERROR_NOTFOUND;
+    }
 
     ret = config_load(config_path, &cfg);
     if (ret != NB_SUCCESS) {

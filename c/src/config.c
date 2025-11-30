@@ -51,7 +51,7 @@ int config_new_default(nb_config_t **cfg_out) {
     }
 
     /* Set defaults */
-    cfg->wg_iface_name = nb_strdup("wt0");
+    cfg->wg_iface_name = nb_strdup("wtnb0");
     cfg->wg_listen_port = 51820;
     cfg->config_path = nb_strdup(config_get_default_path());
 
@@ -69,6 +69,15 @@ static char* json_get_string(cJSON *obj, const char *key) {
     return NULL;
 }
 
+/* Helper: Get string from JSON object (fallback to second key if provided) */
+static char* json_get_string_any(cJSON *obj, const char *key1, const char *key2) {
+    char *val = json_get_string(obj, key1);
+    if (!val && key2) {
+        val = json_get_string(obj, key2);
+    }
+    return val;
+}
+
 /* Helper: Get int from JSON object */
 static int json_get_int(cJSON *obj, const char *key, int default_val) {
     cJSON *item = cJSON_GetObjectItem(obj, key);
@@ -76,6 +85,15 @@ static int json_get_int(cJSON *obj, const char *key, int default_val) {
         return item->valueint;
     }
     return default_val;
+}
+
+/* Helper: Get int from JSON object (fallback to second key if provided) */
+static int json_get_int_any(cJSON *obj, const char *key1, const char *key2, int default_val) {
+    int val = json_get_int(obj, key1, default_val);
+    if (val == default_val && key2) {
+        val = json_get_int(obj, key2, default_val);
+    }
+    return val;
 }
 
 /* Helper: Get string array from JSON object */
@@ -159,34 +177,52 @@ int config_load(const char *path, nb_config_t **cfg_out) {
 
     /* Load WireGuard config */
     cJSON *wg_config = cJSON_GetObjectItem(root, "WireGuardConfig");
+    if (!wg_config) {
+        /* Accept snake_case fallback */
+        wg_config = cJSON_GetObjectItem(root, "wireguard_config");
+    }
     if (wg_config) {
-        cfg->wg_private_key = json_get_string(wg_config, "PrivateKey");
-        cfg->wg_address = json_get_string(wg_config, "Address");
-        cfg->wg_listen_port = json_get_int(wg_config, "ListenPort", 51820);
-        cfg->preshared_key = json_get_string(wg_config, "PreSharedKey");
+        cfg->wg_private_key = json_get_string_any(wg_config, "PrivateKey", "private_key");
+        cfg->wg_address = json_get_string_any(wg_config, "Address", "address");
+        cfg->wg_listen_port = json_get_int_any(wg_config, "ListenPort", "listen_port", 51820);
+        cfg->preshared_key = json_get_string_any(wg_config, "PreSharedKey", "preshared_key");
+    } else {
+        /* Legacy flat snake_case */
+        cfg->wg_private_key = json_get_string(root, "wg_private_key");
+        cfg->wg_address = json_get_string(root, "wg_address");
+        cfg->wg_listen_port = json_get_int(root, "wg_listen_port", 51820);
+        cfg->preshared_key = json_get_string(root, "preshared_key");
     }
 
     /* Load server URLs */
-    cfg->management_url = json_get_string(root, "ManagementURL");
-    cfg->signal_url = json_get_string(root, "SignalURL");
-    cfg->admin_url = json_get_string(root, "AdminURL");
+    cfg->management_url = json_get_string_any(root, "ManagementURL", "management_url");
+    cfg->signal_url = json_get_string_any(root, "SignalURL", "signal_url");
+    cfg->admin_url = json_get_string_any(root, "AdminURL", "admin_url");
 
     /* Load interface name */
-    cfg->wg_iface_name = json_get_string(root, "WgIfaceName");
+    cfg->wg_iface_name = json_get_string_any(root, "WgIfaceName", "wg_iface_name");
     if (!cfg->wg_iface_name) {
-        cfg->wg_iface_name = nb_strdup("wt0");
+        cfg->wg_iface_name = nb_strdup("wtnb0");
     }
 
     /* Load peer ID */
-    cfg->peer_id = json_get_string(root, "PeerID");
+    cfg->peer_id = json_get_string_any(root, "PeerID", "peer_id");
 
     /* Load NAT external IPs */
-    json_get_string_array(root, "NATExternalIPs",
+    if (json_get_string_array(root, "NATExternalIPs",
                          &cfg->nat_external_ips,
-                         &cfg->nat_external_ips_count);
+                         &cfg->nat_external_ips_count) != NB_SUCCESS) {
+        cfg->nat_external_ips = NULL;
+        cfg->nat_external_ips_count = 0;
+    }
+    if (!cfg->nat_external_ips || cfg->nat_external_ips_count == 0) {
+        json_get_string_array(root, "nat_external_ips",
+                              &cfg->nat_external_ips,
+                              &cfg->nat_external_ips_count);
+    }
 
     /* Load DNS */
-    cfg->custom_dns_addr = json_get_string(root, "CustomDNSAddress");
+    cfg->custom_dns_addr = json_get_string_any(root, "CustomDNSAddress", "custom_dns_address");
 
     /* Store config path */
     cfg->config_path = nb_strdup(path);

@@ -25,7 +25,7 @@ typedef struct route_manager route_manager_t;
 typedef struct {
     char *id;               /* Route identifier (optional) */
     char *network;          /* Network in CIDR notation, e.g., "10.0.0.0/8" */
-    char *device;           /* Network device, e.g., "wt0" */
+    char *device;           /* Network device, e.g., "wtnb0" */
     int metric;             /* Route priority (lower = higher priority) */
     int masquerade;         /* 1 to enable NAT masquerading, 0 otherwise */
 } route_config_t;
@@ -51,10 +51,10 @@ route_manager_t* route_manager_new(const char *wg_device);
  *
  * Reference: Go AddRoute()
  *
- * Example: Add route for 10.0.0.0/8 via wt0
+ * Example: Add route for 10.0.0.0/8 via wtnb0
  *   route_add(mgr, &(route_config_t){
  *     .network = "10.0.0.0/8",
- *     .device = "wt0",
+ *     .device = "wtnb0",
  *     .metric = 100,
  *     .masquerade = 0
  *   });

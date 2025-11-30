@@ -17,6 +17,8 @@ set -e
 
 CLI="./build/netbird-client"
 CONFIG_FILE="/tmp/netbird-test-cli.json"
+# Interface name must be <=15 chars; use short prefix + PID
+IFACE_NAME=$(printf "wnbc%05d" "$$")
 
 echo ""
 echo "================================================================================"
@@ -35,18 +37,20 @@ echo "[Step 1] Creating configuration with WireGuard key..."
 PRIVKEY=$(wg genkey)
 cat > $CONFIG_FILE << EOF
 {
-  "wg_iface_name": "wt-test",
-  "wg_private_key": "$PRIVKEY",
-  "wg_address": "100.64.0.123/16",
-  "wg_listen_port": 51821,
-  "management_url": "https://api.netbird.io:443",
-  "signal_url": "https://signal.netbird.io:443",
-  "admin_url": "https://app.netbird.io",
-  "peer_id": "test-peer-cli-001"
+  "WireGuardConfig": {
+    "Address": "203.0.113.253/32",
+    "ListenPort": 53000,
+    "PrivateKey": "$PRIVKEY"
+  },
+  "WgIfaceName": "$IFACE_NAME",
+  "ManagementURL": "https://api.netbird.io:443",
+  "SignalURL": "https://signal.netbird.io:443",
+  "AdminURL": "https://app.netbird.io",
+  "PeerID": "test-peer-cli-001"
 }
 EOF
 echo "  Config created at $CONFIG_FILE"
-echo "  Interface: wt-test"
+echo "  Interface: $IFACE_NAME"
 echo "  Address: 100.64.0.123/16"
 echo ""
 
@@ -57,7 +61,7 @@ $CLI -c $CONFIG_FILE up > /tmp/netbird-cli-test.log 2>&1 &
 CLI_PID=$!
 sleep 2
 # Check if it's still running and interface exists
-if ip link show wt-test >/dev/null 2>&1; then
+if ip link show "$IFACE_NAME" >/dev/null 2>&1; then
     echo "  NetBird started successfully (PID: $CLI_PID)"
 else
     echo "  WARNING: Interface not found, but continuing..."
@@ -67,7 +71,7 @@ echo ""
 
 # Step 3: Check status
 echo "[Step 3] Checking NetBird status..."
-ip link show wt-test >/dev/null 2>&1 && echo "  Interface wt-test is UP" || echo "  Interface wt-test not found"
+ip link show "$IFACE_NAME" >/dev/null 2>&1 && echo "  Interface $IFACE_NAME is UP" || echo "  Interface $IFACE_NAME not found"
 echo ""
 
 # Step 4: Add a test peer

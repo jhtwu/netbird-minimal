@@ -17,7 +17,8 @@ Instead of implementing full gRPC + encrypted Protocol Buffers (which is complex
 - `c/src/config.c` - Complete rewrite with cJSON support
   - `config_load()` - Parse JSON config files
   - `config_save()` - Save config to JSON
-  - Full compatibility with Go client config format
+  - Full compatibility with Go client config format (CamelCase) and accepts legacy snake_case keys
+  - Default interface name changed to `wtnb0` to avoid clashing with existing `wt0`
 
 - `c/test/test_config.c` - JSON configuration tests
   - Save/load round-trip testing
@@ -70,7 +71,7 @@ Implemented the core engine that coordinates all components.
 
 ### ✅ test_engine - PASSED
 - Engine starts successfully
-- WireGuard interface created (wt0 with 100.64.0.100/16)
+- WireGuard interface created (wtnb0 with 100.64.0.100/16)
 - Route manager initialized
 - Peer added with allowed IPs and endpoint
 - Routes added successfully
@@ -107,11 +108,11 @@ The NetBird minimal C client can now:
    - Default config generation
 
 5. **CLI Interface**
-   - `netbird-client up` - Start NetBird
-   - `netbird-client down` - Stop NetBird
-   - `netbird-client status` - Show status
-   - `netbird-client add-peer` - Add peer manually
-   - Custom config file support with `-c`
+- `netbird-client up` - Start NetBird (manual peers/路由)
+- `netbird-client down` - Stop NetBird
+- `netbird-client status` - Show status
+- `netbird-client add-peer` - Add peer manually
+- Custom config file support with `-c`
 
 ## Architecture
 
@@ -178,6 +179,10 @@ The NetBird minimal C client can now:
 4. **No Authentication**
    - No setup key registration
    - No login flow
+
+5. **Prototype shell commands + fixed interface naming**
+   - Still uses `ip/wg/iptables` shell commands; needs netlink/libnice/libwg in later phase
+   - Default interface now `wtnb0` (tests `wtnb-cli0`) to avoid clashing with existing `wt0`
 
 ## Files Modified in This Phase
 

@@ -58,11 +58,16 @@ int main(void) {
         free(privkey);
         return 1;
     }
+    free(cfg->wg_iface_name);
+    /* Use PID to avoid interface name collisions */
+    char ifname[32];
+    snprintf(ifname, sizeof(ifname), "wtnb-wg-%d", getpid() % 10000);
+    cfg->wg_iface_name = strdup(ifname);
 
     /* Set WireGuard parameters */
     cfg->wg_private_key = privkey;
-    cfg->wg_address = strdup("100.64.0.100/16");
-    cfg->wg_listen_port = 51820;
+    cfg->wg_address = strdup("203.0.113.250/32");
+    cfg->wg_listen_port = 53001 + (getpid() % 500); /* avoid clashes */
 
     printf("  Interface: %s\n", cfg->wg_iface_name);
     printf("  Address:   %s\n", cfg->wg_address);

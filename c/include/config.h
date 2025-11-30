@@ -18,7 +18,7 @@
 typedef struct {
     /* WireGuard configuration */
     char *wg_private_key;       /* WireGuard private key (base64) */
-    char *wg_iface_name;        /* Interface name, e.g., "wt0" */
+    char *wg_iface_name;        /* Interface name, e.g., "wtnb0" */
     char *wg_address;           /* WireGuard IP address, e.g., "100.64.0.5/16" */
     int wg_listen_port;         /* Listen port, default 51820 */
     char *preshared_key;        /* Optional pre-shared key */

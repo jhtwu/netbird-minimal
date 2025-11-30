@@ -44,12 +44,16 @@ int main(void) {
         printf("  FAILED: Could not create config\n");
         return 1;
     }
+    free(cfg->wg_iface_name);
+    char ifname[32];
+    snprintf(ifname, sizeof(ifname), "wtnb-eng-%d", getpid() % 10000);
+    cfg->wg_iface_name = strdup(ifname);
 
     /* Generate WireGuard key and set parameters */
     wg_generate_private_key(&privkey);
     cfg->wg_private_key = privkey;
-    cfg->wg_address = strdup("100.64.0.100/16");
-    cfg->wg_listen_port = 51820;
+    cfg->wg_address = strdup("203.0.113.252/32");
+    cfg->wg_listen_port = 53003 + (getpid() % 500); /* avoid clashes */
     cfg->management_url = strdup("https://api.netbird.io:443");
     cfg->signal_url = strdup("https://signal.netbird.io:443");
 
