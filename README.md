@@ -57,22 +57,38 @@ netbird/
 4. 閱讀 `go/STRUCTURE.md` - 了解詳細的 Go 到 C 對應
 
 ### 2. Go 程式碼參考
-Go 程式碼已經整理好，可以作為 C 實作的參考：
+
+**重要**: `go/` 目錄中的程式碼**不是用來編譯執行的**！
+
+這些是從 NetBird 官方專案抽取的參考實作，用於：
+- 理解 NetBird client 的運作邏輯
+- 作為 C 語言移植的參考
+- 查看資料結構和 API 設計
+
+這些 Go 檔案依賴完整的 NetBird 專案，無法單獨編譯。
+
+**如何使用**：
 
 ```bash
-# 查看核心引擎
-cat go/internal/engine.go
-
-# 查看 WireGuard 介面
-cat go/iface/iface.go
-cat go/iface/iface_new_linux.go
-
-# 查看 Management 客戶端
-cat go/management/client/grpc.go
+# 閱讀和理解邏輯（不要嘗試編譯）
+cat go/internal/engine.go         # 核心引擎
+cat go/iface/iface_new_linux.go   # WireGuard 介面
+cat go/management/client/grpc.go  # Management 客戶端
 
 # 查看 Proto 定義
 cat go/proto/management.proto
 cat go/proto/signalexchange.proto
+
+# 詳細說明
+cat go/README_GO_CODE.md
+```
+
+**如果需要執行 Go 版本**，請使用官方完整專案：
+```bash
+git clone https://github.com/netbirdio/netbird /tmp/netbird-full
+cd /tmp/netbird-full/client
+go build -o netbird
+sudo ./netbird up --setup-key YOUR_KEY
 ```
 
 ### 3. 開始 C 實作
