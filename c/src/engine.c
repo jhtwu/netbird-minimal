@@ -95,6 +95,93 @@ int nb_engine_start(nb_engine_t *engine) {
     return NB_SUCCESS;
 }
 
+int nb_engine_start_with_mgmt(nb_engine_t *engine, const char *setup_key) {
+    if (!engine || !engine->config) {
+        NB_LOG_ERROR("Invalid engine");
+        return NB_ERROR_INVALID;
+    }
+
+    if (engine->running) {
+        NB_LOG_WARN("Engine already running");
+        return NB_SUCCESS;
+    }
+
+    int ret;
+
+    NB_LOG_INFO("Starting NetBird engine with management...");
+
+    /* Step 0: Create management client */
+    if (!engine->mgmt_client) {
+        engine->mgmt_client = mgmt_client_new(engine->config->management_url);
+        if (!engine->mgmt_client) {
+            NB_LOG_ERROR("Failed to create management client");
+            return NB_ERROR_SYSTEM;
+        }
+    }
+
+    /* Step 1: Register with management server */
+    NB_LOG_INFO("Step 1: Registering with management server...");
+    mgmt_config_t *mgmt_config = NULL;
+    ret = mgmt_register(engine->mgmt_client, setup_key, &mgmt_config);
+    if (ret != NB_SUCCESS) {
+        NB_LOG_ERROR("Failed to register with management");
+        return ret;
+    }
+
+    /* Step 2: Start basic engine (WireGuard interface + routes) */
+    ret = nb_engine_start(engine);
+    if (ret != NB_SUCCESS) {
+        NB_LOG_ERROR("Failed to start engine");
+        mgmt_config_free(mgmt_config);
+        return ret;
+    }
+
+    /* Step 3: Add peers from management */
+    NB_LOG_INFO("Step 3: Adding %d peer(s) from management...", mgmt_config->peer_count);
+    for (int i = 0; i < mgmt_config->peer_count; i++) {
+        mgmt_peer_t *mp = &mgmt_config->peers[i];
+
+        /* Convert mgmt peer to nb_peer_info */
+        nb_peer_info_t peer = {0};
+        peer.public_key = mp->public_key;
+        peer.endpoint = mp->endpoint;
+        peer.keepalive = 25;  /* Default keepalive */
+
+        /* Parse allowed_ips (single CIDR for stub) */
+        peer.allowed_ips_count = 1;
+        peer.allowed_ips = &mp->allowed_ips;
+
+        ret = nb_engine_add_peer(engine, &peer);
+        if (ret != NB_SUCCESS) {
+            NB_LOG_WARN("Failed to add peer %s", mp->id);
+        }
+    }
+
+    /* Step 4: Add routes from management */
+    NB_LOG_INFO("Step 4: Adding %d route(s) from management...", mgmt_config->route_count);
+    for (int i = 0; i < mgmt_config->route_count; i++) {
+        route_config_t route = {
+            .network = mgmt_config->routes[i],
+            .device = engine->wg_iface->name,
+            .metric = 100,
+            .masquerade = 0
+        };
+
+        ret = route_add(engine->route_mgr, &route);
+        if (ret != NB_SUCCESS) {
+            NB_LOG_WARN("Failed to add route %s", mgmt_config->routes[i]);
+        }
+    }
+
+    mgmt_config_free(mgmt_config);
+
+    NB_LOG_INFO("========================================");
+    NB_LOG_INFO("  NetBird connected successfully!");
+    NB_LOG_INFO("========================================");
+
+    return NB_SUCCESS;
+}
+
 int nb_engine_stop(nb_engine_t *engine) {
     if (!engine) {
         NB_LOG_ERROR("Invalid engine");
@@ -122,6 +209,13 @@ int nb_engine_stop(nb_engine_t *engine) {
         wg_iface_destroy(engine->wg_iface);
         wg_iface_free(engine->wg_iface);
         engine->wg_iface = NULL;
+    }
+
+    /* Step 3: Close management client */
+    if (engine->mgmt_client) {
+        NB_LOG_INFO("Step 3: Closing management client...");
+        mgmt_client_free(engine->mgmt_client);
+        engine->mgmt_client = NULL;
     }
 
     engine->running = 0;

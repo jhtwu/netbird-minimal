@@ -19,6 +19,7 @@
 #include "config.h"
 #include "wg_iface.h"
 #include "route.h"
+#include "mgmt_client.h"
 
 /**
  * Engine structure
@@ -35,10 +36,13 @@ typedef struct nb_engine {
     /* Route manager */
     route_manager_t *route_mgr;
 
+    /* Management client (Phase 4) */
+    mgmt_client_t *mgmt_client;
+
     /* State */
     int running;
 
-    /* Future: Management and Signal clients will be added here in Phase 2/4 */
+    /* Future: Signal client will be added here in Phase 4 */
 } nb_engine_t;
 
 /**
@@ -80,6 +84,22 @@ nb_engine_t* nb_engine_new(nb_config_t *config);
  * @return NB_SUCCESS on success, NB_ERROR_* on failure
  */
 int nb_engine_start(nb_engine_t *engine);
+
+/**
+ * Start engine with management registration (Phase 4)
+ *
+ * This function:
+ * 1. Creates management client
+ * 2. Registers with setup key (gets peer list)
+ * 3. Creates WireGuard interface
+ * 4. Adds peers from management
+ * 5. Sets up routes
+ *
+ * @param engine Engine instance
+ * @param setup_key Setup key for registration (NULL to skip registration)
+ * @return NB_SUCCESS on success, NB_ERROR_* on failure
+ */
+int nb_engine_start_with_mgmt(nb_engine_t *engine, const char *setup_key);
 
 /**
  * Stop the engine
