@@ -3,7 +3,7 @@ syntax = "proto3";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 
-option go_package = "/proto";
+option go_package = "github.com/netbirdio/netbird-minimal/proto/management;managementpb";
 
 package management;
 
