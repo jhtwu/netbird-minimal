@@ -19,11 +19,13 @@ func main() {
 	configPathFlag := flag.NewFlagSet("flags", flag.ExitOnError)
 	setupKey := configPathFlag.String("setup-key", "", "setup key for registration (required for up)")
 	configPath := configPathFlag.String("config", "", "config file path (defaults to user config dir)")
+	mgmtURL := configPathFlag.String("management-url", "", "override management URL")
+	signalURL := configPathFlag.String("signal-url", "", "override signal URL")
 
 	switch cmd {
 	case "up":
 		configPathFlag.Parse(os.Args[2:])
-		if err := runUp(*configPath, *setupKey); err != nil {
+		if err := runUp(*configPath, *setupKey, *mgmtURL, *signalURL); err != nil {
 			fmt.Fprintf(os.Stderr, "up error: %v\n", err)
 			os.Exit(1)
 		}
@@ -64,13 +66,19 @@ func loadOrDefault(path string) (*Config, string, error) {
 	return cfg, cfgPath, nil
 }
 
-func runUp(path, setupKey string) error {
+func runUp(path, setupKey, mgmtURL, signalURL string) error {
 	cfg, cfgPath, err := loadOrDefault(path)
 	if err != nil {
 		return err
 	}
 	if setupKey != "" {
 		cfg.SetupKey = setupKey
+	}
+	if mgmtURL != "" {
+		cfg.ManagementURL = mgmtURL
+	}
+	if signalURL != "" {
+		cfg.SignalURL = signalURL
 	}
 	mgmt := NewManagementClient(cfg.ManagementURL, cfg)
 	signal := NewSignalClient(cfg.SignalURL)

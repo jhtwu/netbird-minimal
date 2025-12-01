@@ -70,8 +70,8 @@ func saveConfig(path string, cfg *Config) error {
 
 func defaultConfig() *Config {
 	return &Config{
-		ManagementURL: "https://management.example.com:443",
-		SignalURL:     "https://signal.example.com:443",
+		ManagementURL: "https://api.netbird.io:443",
+		SignalURL:     "https://signal.netbird.io:443",
 		WgIfaceName:   "wtnb0",
 		WgAddress:     "100.64.0.50/32",
 		WgListenPort:  51820,

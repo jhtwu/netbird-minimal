@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"strings"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	signalpb "github.com/netbirdio/netbird-minimal/proto/signal/proto"
@@ -21,7 +23,11 @@ func dialSignal(url string) (*SignalGRPC, error) {
 	if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
 		target = strings.TrimPrefix(strings.TrimPrefix(url, "https://"), "http://")
 	}
-	conn, err := grpc.Dial(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	creds := grpc.WithTransportCredentials(insecure.NewCredentials())
+	if strings.HasPrefix(url, "https://") || strings.Contains(target, ":443") {
+		creds = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12}))
+	}
+	conn, err := grpc.Dial(target, creds)
 	if err != nil {
 		return nil, err
 	}
