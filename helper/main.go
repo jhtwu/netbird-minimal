@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+
+	managementpb "github.com/netbirdio/netbird-minimal/proto/management/proto"
 )
 
 // NetBird Helper Daemon
@@ -70,6 +73,7 @@ type Helper struct {
 	peersFile  string
 	routesFile string
 	running    bool
+	mgmtClient *ManagementClient
 }
 
 func main() {
@@ -137,21 +141,156 @@ func (h *Helper) loadConfig() error {
 func (h *Helper) run() {
 	log.Println("Helper started, entering main loop...")
 
-	// Phase 1: Simple stub implementation
-	// Periodically check for setup key and write demo peers
+	// Check if we have a setup key
+	if h.config.SetupKey == "" {
+		log.Println("[WARN] No setup key provided, using stub mode")
+		h.runStubMode()
+		return
+	}
 
+	// Real mode: Connect to Management server
+	log.Println("Running in REAL mode (connecting to Management server)")
+	if err := h.runRealMode(); err != nil {
+		log.Printf("[ERROR] Real mode failed: %v", err)
+		log.Println("Falling back to stub mode...")
+		h.runStubMode()
+	}
+}
+
+func (h *Helper) runStubMode() {
+	log.Println("[STUB] Running in stub mode (demo peers)")
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for h.running {
 		select {
 		case <-ticker.C:
-			h.update()
+			h.updateStub()
 		}
 	}
 }
 
-func (h *Helper) update() {
+func (h *Helper) runRealMode() error {
+	// Create Management client
+	mgmtClient, err := NewManagementClient(h.config.ManagementURL, h.config.WireGuardConfig.PrivateKey)
+	if err != nil {
+		return fmt.Errorf("create management client: %w", err)
+	}
+	h.mgmtClient = mgmtClient
+
+	// Connect
+	if err := mgmtClient.Connect(); err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+	defer mgmtClient.Close()
+
+	// Get server public key
+	if err := mgmtClient.GetServerKey(); err != nil {
+		return fmt.Errorf("get server key: %w", err)
+	}
+
+	// Login
+	loginResp, err := mgmtClient.Login(h.config.SetupKey)
+	if err != nil {
+		return fmt.Errorf("login: %w", err)
+	}
+
+	// Process initial login response
+	h.processLoginResponse(loginResp)
+
+	// Start Sync stream
+	ctx := context.Background()
+	if err := mgmtClient.Sync(ctx, h.onSyncUpdate); err != nil {
+		return fmt.Errorf("sync: %w", err)
+	}
+
+	return nil
+}
+
+func (h *Helper) processLoginResponse(resp *managementpb.LoginResponse) {
+	log.Println("[mgmt] Processing login response...")
+
+	// LoginResponse doesn't contain NetworkMap or peers
+	// Peers are received via Sync stream
+	if resp.PeerConfig != nil {
+		log.Printf("[mgmt] Our peer config received:")
+		log.Printf("[mgmt]   Address: %s", resp.PeerConfig.Address)
+		log.Printf("[mgmt]   DNS: %s", resp.PeerConfig.Dns)
+	}
+
+	log.Println("[mgmt] Login successful, waiting for Sync updates...")
+}
+
+func (h *Helper) onSyncUpdate(resp *managementpb.SyncResponse) {
+	log.Println("[mgmt] Processing sync update...")
+
+	// Extract peers from NetworkMap
+	if resp.NetworkMap != nil {
+		h.processPeers(resp.NetworkMap.RemotePeers)
+		h.processRoutes(resp.NetworkMap.Routes)
+	}
+}
+
+func (h *Helper) processPeers(remotePeers []*managementpb.RemotePeerConfig) {
+	if len(remotePeers) == 0 {
+		log.Println("[mgmt] No remote peers")
+		return
+	}
+
+	log.Printf("[mgmt] Processing %d peer(s)", len(remotePeers))
+
+	peers := make([]PeerInfo, 0, len(remotePeers))
+	for _, rp := range remotePeers {
+		peer := PeerInfo{
+			ID:         rp.WgPubKey, // Use pubkey as ID for now
+			PublicKey:  rp.WgPubKey,
+			Endpoint:   "", // Will be filled by Signal/ICE
+			AllowedIPs: rp.AllowedIps,
+			Keepalive:  25,
+		}
+		peers = append(peers, peer)
+		log.Printf("[mgmt]   Peer: %s (allowed: %v)", peer.PublicKey[:16]+"...", peer.AllowedIPs)
+	}
+
+	peersFile := &PeersFile{
+		Peers:     peers,
+		UpdatedAt: time.Now().Format(time.RFC3339),
+	}
+
+	if err := h.writePeers(peersFile); err != nil {
+		log.Printf("[ERROR] Failed to write peers: %v", err)
+	}
+}
+
+func (h *Helper) processRoutes(routes []*managementpb.Route) {
+	if len(routes) == 0 {
+		log.Println("[mgmt] No routes")
+		return
+	}
+
+	log.Printf("[mgmt] Processing %d route(s)", len(routes))
+
+	routeInfos := make([]RouteInfo, 0, len(routes))
+	for _, r := range routes {
+		route := RouteInfo{
+			Network: r.Network,
+			Metric:  100,
+		}
+		routeInfos = append(routeInfos, route)
+		log.Printf("[mgmt]   Route: %s", route.Network)
+	}
+
+	routesFile := &RoutesFile{
+		Routes:    routeInfos,
+		UpdatedAt: time.Now().Format(time.RFC3339),
+	}
+
+	if err := h.writeRoutes(routesFile); err != nil {
+		log.Printf("[ERROR] Failed to write routes: %v", err)
+	}
+}
+
+func (h *Helper) updateStub() {
 	// Check if we have a setup key
 	if h.config.SetupKey == "" {
 		log.Println("No setup key, skipping update")
