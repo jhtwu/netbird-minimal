@@ -21,6 +21,10 @@ type ManagementClient struct {
 	cfg      *Config
 	conn     *grpc.ClientConn
 	grpc     managementpb.ManagementServiceClient
+	serverKey wgtypes.Key
+	version   int32
+	priv      wgtypes.Key
+	pub       wgtypes.Key
 }
 
 func NewManagementClient(url string, cfg *Config) *ManagementClient {
@@ -63,6 +67,8 @@ func (c *ManagementClient) Register(setupKey string) ([]Peer, []string, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse server key: %w", err)
 	}
+	c.serverKey = serverKey
+	c.version = serverKeyResp.GetVersion()
 
 	// Ensure we have a private key
 	priv, pub, err := ensureKey(c.cfg)
@@ -76,7 +82,7 @@ func (c *ManagementClient) Register(setupKey string) ([]Peer, []string, error) {
 			WgPubKey: []byte(pub.String()),
 		},
 		Meta: &managementpb.PeerSystemMeta{
-			Hostname:       hostname(),
+			Hostname:       "netbird-minimal-go",
 			GoOS:           runtime.GOOS,
 			NetbirdVersion: "mini",
 			OS:             runtime.GOOS,
@@ -101,6 +107,10 @@ func (c *ManagementClient) Register(setupKey string) ([]Peer, []string, error) {
 	if err := encryption.DecryptMessage(serverKey, priv, loginRespEnc.GetBody(), &loginResp); err != nil {
 		return nil, nil, fmt.Errorf("decrypt login: %w", err)
 	}
+	fmt.Println("[mgmt] login success (encrypted)")
+	c.serverKey = serverKey
+	c.version = serverKeyResp.GetVersion()
+	c.priv, c.pub = priv, pub
 
 	if cfg := c.cfg; cfg != nil {
 		if pc := loginResp.GetPeerConfig(); pc != nil && pc.GetAddress() != "" {
@@ -109,11 +119,17 @@ func (c *ManagementClient) Register(setupKey string) ([]Peer, []string, error) {
 		if nc := loginResp.GetNetbirdConfig(); nc != nil && nc.GetSignal().GetUri() != "" {
 			cfg.SignalURL = nc.GetSignal().GetUri()
 		}
+		if cfg.WgListenPort == 0 {
+			cfg.WgListenPort = 51820
+		}
 	}
 
-	// NOTE: real peers/routes come from Sync; return stub for now.
-	p, r := fallbackStub()
-	return p, r, nil
+	// Try one Sync to fetch peers/routes
+	peers, routes, err := c.syncOnce()
+	if err != nil {
+		fmt.Printf("[mgmt] sync failed (%v), continuing without peers/routes\n", err)
+	}
+	return peers, routes, nil
 }
 
 func (c *ManagementClient) Close() {
