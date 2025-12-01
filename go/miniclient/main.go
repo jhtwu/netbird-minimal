@@ -72,7 +72,7 @@ func runUp(path, setupKey string) error {
 	if setupKey != "" {
 		cfg.SetupKey = setupKey
 	}
-	mgmt := NewManagementClient(cfg.ManagementURL)
+	mgmt := NewManagementClient(cfg.ManagementURL, cfg)
 	signal := NewSignalClient(cfg.SignalURL)
 	engine := NewEngine(cfg, mgmt, signal)
 	if err := engine.Start(); err != nil {
@@ -111,7 +111,7 @@ func runStatus(path string) error {
 	if err != nil {
 		return err
 	}
-	engine := NewEngine(cfg, NewManagementClient(cfg.ManagementURL), NewSignalClient(cfg.SignalURL))
+	engine := NewEngine(cfg, NewManagementClient(cfg.ManagementURL, cfg), NewSignalClient(cfg.SignalURL))
 	engine.Status()
 	return nil
 }

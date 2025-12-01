@@ -3,12 +3,14 @@ module github.com/netbirdio/netbird-minimal/miniclient
 go 1.21
 
 require (
+	github.com/golang/protobuf v1.5.3
 	github.com/netbirdio/netbird-minimal/proto v0.0.0
+	golang.org/x/crypto v0.14.0
+	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20230429144221-925a1e7659e6
 	google.golang.org/grpc v1.60.0
 )
 
 require (
-	github.com/golang/protobuf v1.5.3 // indirect
 	golang.org/x/net v0.16.0 // indirect
 	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
